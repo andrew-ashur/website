@@ -1,13 +1,13 @@
 # Slack → Notion Task Agent
 
-A lightweight Python agent that monitors a Slack channel for messages and automatically creates tasks in your Notion **Tasks Tracker** database.
+A lightweight Python agent that monitors a Slack channel for messages and automatically creates tasks in your Notion **Personal Task Tracker** database.
 
 ## How It Works
 
 1. The agent polls a Slack channel (or DM) for new messages
 2. It parses task details from the message text
-3. It creates a task in your Notion Tasks Tracker with the parsed fields
-4. It replies in the Slack thread confirming the task was created
+3. It creates a task in Notion with Source set to `slack` and the original message preserved
+4. It replies in the Slack thread confirming the task was created with a link back to Notion
 
 ## Message Formats
 
@@ -15,30 +15,69 @@ A lightweight Python agent that monitors a Slack channel for messages and automa
 ```
 Review Q1 financials by 3/28
 ```
-Creates a task named "Review Q1 financials" with a due date of March 28.
+Creates a task named "Review Q1 financials" due March 28, status Inbox.
 
-### Pipe-delimited format (for more control)
+### Pipe-delimited format (for full control)
 ```
-Call Nisbet about partnership | due: 2026-04-01 | status: in progress | context: Follow up from dinner
+Call Nisbet about partnership | due: 2026-04-01 | priority: p1 | tags: lucid
 ```
 
-### Supported fields
-| Field     | Aliases                        | Example values                                      |
-|-----------|-------------------------------|-----------------------------------------------------|
-| Task name | (first segment, required)     | Any text                                            |
-| due       | `due date`, `date`, `by`      | `today`, `tomorrow`, `3/28`, `2026-04-01`, `in 3 days` |
-| status    | `state`                       | `todo`, `in progress`, `wip`, `done`, `blocked`     |
-| context   | `note`, `notes`, `info`       | Any text                                            |
+### Full example with all fields
+```
+Send board deck | due: tomorrow | priority: p2 | status: to do | tags: fundraise, ops | notes: Include Q1 numbers | recurring: weekly
+```
+
+## Supported Fields
+
+| Field     | Aliases                        | Example values                                           |
+|-----------|-------------------------------|----------------------------------------------------------|
+| Name      | (first segment, required)     | Any text                                                 |
+| due       | `due date`, `date`, `by`      | `today`, `tomorrow`, `eow`, `3/28`, `2026-04-01`, `in 3 days` |
+| priority  | `pri`, `p`                    | `p1`, `urgent`, `high`, `p3`, `low`                      |
+| status    | `state`                       | `inbox`, `todo`, `in progress`, `done`, `dropped`        |
+| tags      | `tag`                         | `lucid`, `personal`, `hiring`, `product`, `fundraise`... |
+| notes     | `note`, `context`, `info`     | Any text                                                 |
+| recurring | `repeat`, `recur`             | `daily`, `weekly`, `monthly`                             |
+
+### Priority shortcuts
+| You type                         | Notion value |
+|---------------------------------|-------------|
+| `p1`, `1`, `urgent`, `critical` | P1          |
+| `p2`, `2`, `high`               | P2          |
+| `p3`, `3`, `medium`, `med`      | P3          |
+| `p4`, `4`, `low`                | P4          |
 
 ### Status shortcuts
-| You type                          | Notion status     |
-|----------------------------------|-------------------|
-| `todo`, `new`, `not started`    | Not started       |
-| `ack`, `acknowledged`           | Acknowledged      |
-| `doing`, `wip`, `in progress`   | In progress       |
-| `blocked`, `waiting`            | Waiting For...    |
-| `done`, `complete`, `finished`  | Done              |
-| `cancelled`, `canceled`         | Cancelled         |
+| You type                          | Notion value |
+|----------------------------------|-------------|
+| `inbox`, `new`                   | Inbox       |
+| `todo`, `to do`, `next`         | To Do       |
+| `doing`, `wip`, `in progress`   | In Progress |
+| `done`, `complete`, `finished`  | Done        |
+| `dropped`, `cancelled`, `skip`  | Dropped     |
+
+### Date shortcuts
+| You type              | Result               |
+|----------------------|----------------------|
+| `today`, `now`, `eod`| Today                |
+| `tomorrow`, `tmrw`   | Tomorrow             |
+| `eow`                | Next Friday          |
+| `eom`                | End of month         |
+| `next week`          | 7 days from now      |
+| `in 3 days`          | 3 days from now      |
+| `3/28` or `3/28/26`  | March 28, 2026       |
+| `2026-04-01`         | April 1, 2026        |
+
+### Available tags
+`lucid`, `personal`, `hiring`, `product`, `fundraise`, `ops`, `legal`, `marketing`, `sales`, `admin`, `optimization`, `email`, `meeting-notes`
+
+## Auto-populated Fields
+
+Every task created by the agent automatically includes:
+- **Source:** `slack`
+- **Created At:** today's date
+- **Original Text:** the raw Slack message (for reference)
+- **Status:** `Inbox` (default, unless overridden)
 
 ## Setup
 
@@ -55,7 +94,7 @@ Call Nisbet about partnership | due: 2026-04-01 | status: in progress | context:
 ### 2. Create a Notion Integration
 1. Go to [notion.so/my-integrations](https://www.notion.so/my-integrations)
 2. Create a new integration and copy the token (`ntn_...`)
-3. Share your **Tasks Tracker** database with the integration (click "..." on the database → Connections → Add your integration)
+3. Share your **Personal Task Tracker** database with the integration (click "..." on the database → Connections → Add your integration)
 
 ### 3. Configure & Run
 ```bash

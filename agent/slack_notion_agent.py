@@ -3,19 +3,22 @@
 Slack -> Notion Task Agent
 
 Monitors a Slack channel (or DMs) for task messages and automatically
-creates tasks in a Notion "Tasks Tracker" database.
+creates tasks in Andrew's Personal Task Tracker database in Notion.
 
 Message format examples:
   "Review Q1 financials by 3/28"
-  "Call Nisbet about partnership | due: 2026-04-01 | status: in progress"
-  "Fix landing page copy | context: Website redesign project"
+  "Call Nisbet about partnership | due: 2026-04-01 | priority: p1"
+  "Fix landing page copy | tags: lucid, marketing | notes: Part of website redesign"
+  "Send board deck | due: tomorrow | priority: p2 | status: to do | tags: fundraise"
 
 Supported fields (pipe-delimited):
-  - Task name:  first segment (required)
+  - Name:       first segment (required)
   - due:        due date (natural: "3/28", "tomorrow", or ISO: 2026-04-01)
-  - status:     Not started, Acknowledged, In progress, Waiting For..., Done, Cancelled
-  - context:    freeform context text
-  - project:    project name (matched against existing Notion projects)
+  - priority:   P1, P2, P3, P4
+  - status:     Inbox, To Do, In Progress, Done, Dropped
+  - tags:       comma-separated (lucid, personal, hiring, product, fundraise, ops, etc.)
+  - notes:      freeform notes
+  - recurring:  none, daily, weekly, monthly
 """
 
 import os
@@ -39,7 +42,7 @@ load_dotenv()
 SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
 NOTION_TOKEN = os.environ["NOTION_TOKEN"]
 NOTION_DATABASE_ID = os.environ.get(
-    "NOTION_DATABASE_ID", "1c281f880910806ca7ded22bbc36c736"
+    "NOTION_DATABASE_ID", "31381f88091081869611c3a55af8287e"
 )
 SLACK_CHANNEL_ID = os.environ.get("SLACK_CHANNEL_ID", "")  # channel or DM to monitor
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))  # seconds
@@ -55,32 +58,54 @@ slack = WebClient(token=SLACK_BOT_TOKEN)
 notion = NotionClient(auth=NOTION_TOKEN)
 
 # ---------------------------------------------------------------------------
+# Valid values for select/multi-select properties
+# ---------------------------------------------------------------------------
+VALID_STATUSES = {"Inbox", "To Do", "In Progress", "Done", "Dropped"}
+VALID_PRIORITIES = {"P1", "P2", "P3", "P4"}
+VALID_TAGS = {
+    "lucid", "personal", "hiring", "product", "fundraise",
+    "ops", "legal", "marketing", "sales", "admin",
+    "optimization", "email", "meeting-notes",
+}
+VALID_RECURRING = {"none", "daily", "weekly", "monthly"}
+
+# ---------------------------------------------------------------------------
 # Status mapping – normalises casual input to exact Notion status values
 # ---------------------------------------------------------------------------
 STATUS_MAP = {
-    "not started": "Not started",
-    "new": "Not started",
-    "todo": "Not started",
-    "to do": "Not started",
-    "acknowledged": "Acknowledged",
-    "ack": "Acknowledged",
-    "in progress": "In progress",
-    "in-progress": "In progress",
-    "doing": "In progress",
-    "started": "In progress",
-    "wip": "In progress",
-    "waiting": "Waiting For...",
-    "waiting for": "Waiting For...",
-    "blocked": "Waiting For...",
+    "inbox": "Inbox",
+    "new": "Inbox",
+    "todo": "To Do",
+    "to do": "To Do",
+    "to-do": "To Do",
+    "next": "To Do",
+    "in progress": "In Progress",
+    "in-progress": "In Progress",
+    "doing": "In Progress",
+    "started": "In Progress",
+    "wip": "In Progress",
     "done": "Done",
     "complete": "Done",
     "completed": "Done",
     "finished": "Done",
-    "cancelled": "Cancelled",
-    "canceled": "Cancelled",
+    "dropped": "Dropped",
+    "cancelled": "Dropped",
+    "canceled": "Dropped",
+    "drop": "Dropped",
+    "skip": "Dropped",
 }
 
-DEFAULT_STATUS = "Not started"
+DEFAULT_STATUS = "Inbox"
+
+# ---------------------------------------------------------------------------
+# Priority mapping – normalises casual input
+# ---------------------------------------------------------------------------
+PRIORITY_MAP = {
+    "p1": "P1", "1": "P1", "urgent": "P1", "critical": "P1",
+    "p2": "P2", "2": "P2", "high": "P2",
+    "p3": "P3", "3": "P3", "medium": "P3", "med": "P3",
+    "p4": "P4", "4": "P4", "low": "P4",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -93,10 +118,21 @@ def parse_date(text: str) -> Optional[str]:
 
     if text in ("today", "now"):
         return today.isoformat()
-    if text in ("tomorrow", "tmrw"):
+    if text in ("tomorrow", "tmrw", "tmr"):
         return (today + timedelta(days=1)).isoformat()
     if text == "next week":
         return (today + timedelta(weeks=1)).isoformat()
+    if text in ("eod", "end of day"):
+        return today.isoformat()
+    if text in ("eow", "end of week"):
+        # Next Friday
+        days_until_friday = (4 - today.weekday()) % 7 or 7
+        return (today + timedelta(days=days_until_friday)).isoformat()
+    if text in ("eom", "end of month"):
+        if today.month == 12:
+            return datetime(today.year + 1, 1, 1).date().isoformat()
+        next_month = today.replace(month=today.month + 1, day=1)
+        return (next_month - timedelta(days=1)).isoformat()
 
     # Relative: "in 3 days", "in 2 weeks"
     rel = re.match(r"in\s+(\d+)\s+(day|week|month)s?", text)
@@ -129,6 +165,12 @@ def parse_date(text: str) -> Optional[str]:
     return None
 
 
+def parse_tags(text: str) -> list[str]:
+    """Parse comma-separated tags, validating against known tags."""
+    raw = [t.strip().lower() for t in text.split(",")]
+    return [t for t in raw if t in VALID_TAGS]
+
+
 # ---------------------------------------------------------------------------
 # Message parsing
 # ---------------------------------------------------------------------------
@@ -137,7 +179,7 @@ def parse_task_message(text: str) -> Optional[dict]:
     Parse a Slack message into task fields.
 
     Supports two formats:
-      1. Pipe-delimited:  "Task name | due: 3/28 | status: in progress | context: notes"
+      1. Pipe-delimited:  "Task name | due: 3/28 | priority: p1 | tags: lucid, product"
       2. Simple with trailing "by <date>":  "Review deck by Friday"
 
     Returns None if the message doesn't look like a task.
@@ -154,16 +196,20 @@ def parse_task_message(text: str) -> Optional[dict]:
         return None
 
     task: dict = {
-        "task_name": "",
+        "name": "",
         "status": DEFAULT_STATUS,
+        "priority": None,
         "due_date": None,
-        "context": None,
+        "notes": None,
+        "tags": [],
+        "recurring": None,
+        "original_text": text,
     }
 
     # Pipe-delimited fields
     if "|" in text:
         parts = [p.strip() for p in text.split("|")]
-        task["task_name"] = parts[0]
+        task["name"] = parts[0]
         for part in parts[1:]:
             kv = part.split(":", 1)
             if len(kv) != 2:
@@ -173,18 +219,26 @@ def parse_task_message(text: str) -> Optional[dict]:
                 task["due_date"] = parse_date(val)
             elif key in ("status", "state"):
                 task["status"] = STATUS_MAP.get(val.lower(), DEFAULT_STATUS)
-            elif key in ("context", "note", "notes", "info"):
-                task["context"] = val
+            elif key in ("priority", "pri", "p"):
+                task["priority"] = PRIORITY_MAP.get(val.lower())
+            elif key in ("tags", "tag"):
+                task["tags"] = parse_tags(val)
+            elif key in ("notes", "note", "context", "info"):
+                task["notes"] = val
+            elif key in ("recurring", "repeat", "recur"):
+                val_lower = val.lower()
+                if val_lower in VALID_RECURRING:
+                    task["recurring"] = val_lower
     else:
         # Simple format: "Do something by <date>"
         by_match = re.search(r"\s+by\s+(.+)$", text, re.IGNORECASE)
         if by_match:
-            task["task_name"] = text[: by_match.start()].strip()
+            task["name"] = text[: by_match.start()].strip()
             task["due_date"] = parse_date(by_match.group(1))
         else:
-            task["task_name"] = text
+            task["name"] = text
 
-    if not task["task_name"]:
+    if not task["name"]:
         return None
 
     return task
@@ -194,19 +248,37 @@ def parse_task_message(text: str) -> Optional[dict]:
 # Notion integration
 # ---------------------------------------------------------------------------
 def create_notion_task(task: dict) -> str:
-    """Create a task in the Notion Tasks Tracker database. Returns the page URL."""
+    """Create a task in the Notion Personal Task Tracker. Returns the page URL."""
+    today = datetime.now().date().isoformat()
+
     properties: dict = {
-        "Task name": {"title": [{"text": {"content": task["task_name"]}}]},
-        "Status": {"status": {"name": task["status"]}},
+        "Name": {"title": [{"text": {"content": task["name"]}}]},
+        "Status": {"select": {"name": task["status"]}},
+        "Source": {"select": {"name": "slack"}},
+        "Created At": {"date": {"start": today}},
+        "Original Text": {
+            "rich_text": [{"text": {"content": task.get("original_text", "")[:2000]}}]
+        },
     }
 
-    if task.get("due_date"):
-        properties["Due date"] = {"date": {"start": task["due_date"]}}
+    if task.get("priority"):
+        properties["Priority"] = {"select": {"name": task["priority"]}}
 
-    if task.get("context"):
-        properties["Context"] = {
-            "rich_text": [{"text": {"content": task["context"]}}]
+    if task.get("due_date"):
+        properties["Due"] = {"date": {"start": task["due_date"]}}
+
+    if task.get("notes"):
+        properties["Notes"] = {
+            "rich_text": [{"text": {"content": task["notes"][:2000]}}]
         }
+
+    if task.get("tags"):
+        properties["Tags"] = {
+            "multi_select": [{"name": t} for t in task["tags"]]
+        }
+
+    if task.get("recurring"):
+        properties["Recurring"] = {"select": {"name": task["recurring"]}}
 
     page = notion.pages.create(
         parent={"database_id": NOTION_DATABASE_ID},
@@ -214,7 +286,7 @@ def create_notion_task(task: dict) -> str:
     )
 
     url = page.get("url", "")
-    log.info("Created Notion task: %s -> %s", task["task_name"], url)
+    log.info("Created Notion task: %s -> %s", task["name"], url)
     return url
 
 
@@ -223,12 +295,18 @@ def create_notion_task(task: dict) -> str:
 # ---------------------------------------------------------------------------
 def post_confirmation(channel: str, thread_ts: str, task: dict, notion_url: str):
     """Reply in the Slack thread confirming the task was created."""
-    fields = [f"*Task:* {task['task_name']}"]
+    fields = [f"*Task:* {task['name']}"]
     fields.append(f"*Status:* {task['status']}")
+    if task.get("priority"):
+        fields.append(f"*Priority:* {task['priority']}")
     if task.get("due_date"):
         fields.append(f"*Due:* {task['due_date']}")
-    if task.get("context"):
-        fields.append(f"*Context:* {task['context']}")
+    if task.get("tags"):
+        fields.append(f"*Tags:* {', '.join(task['tags'])}")
+    if task.get("notes"):
+        fields.append(f"*Notes:* {task['notes']}")
+    if task.get("recurring") and task["recurring"] != "none":
+        fields.append(f"*Recurring:* {task['recurring']}")
     fields.append(f"<{notion_url}|View in Notion>")
 
     try:
@@ -284,7 +362,7 @@ def run():
 
                 task = parse_task_message(text)
                 if task:
-                    log.info("Parsed task from Slack: %s", task["task_name"])
+                    log.info("Parsed task from Slack: %s", task["name"])
                     try:
                         notion_url = create_notion_task(task)
                         post_confirmation(SLACK_CHANNEL_ID, ts, task, notion_url)
