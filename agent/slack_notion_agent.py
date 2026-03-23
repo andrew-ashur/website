@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Slack -> Notion Task Agent
+Slack -> Notion Task Agent (Socket Mode)
 
-Monitors a Slack channel (or DMs) for task messages and automatically
-creates tasks in Andrew's Personal Task Tracker database in Notion.
+Listens for Slack messages via Socket Mode (real-time, no polling) and
+automatically creates tasks in Andrew's Personal Task Tracker in Notion.
 
 Message format examples:
   "Review Q1 financials by 3/28"
@@ -23,14 +23,12 @@ Supported fields (pipe-delimited):
 
 import os
 import re
-import json
-import time
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
-from slack_sdk import WebClient
-from slack_sdk.errors import SlackApiError
+from slack_bolt import App
+from slack_bolt.adapter.socket_mode import SocketModeHandler
 from notion_client import Client as NotionClient
 from dotenv import load_dotenv
 
@@ -40,12 +38,11 @@ load_dotenv()
 # Configuration
 # ---------------------------------------------------------------------------
 SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
+SLACK_APP_TOKEN = os.environ["SLACK_APP_TOKEN"]  # xapp-... token for Socket Mode
 NOTION_TOKEN = os.environ["NOTION_TOKEN"]
 NOTION_DATABASE_ID = os.environ.get(
     "NOTION_DATABASE_ID", "31381f88091081869611c3a55af8287e"
 )
-SLACK_CHANNEL_ID = os.environ.get("SLACK_CHANNEL_ID", "")  # channel or DM to monitor
-POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))  # seconds
 TASK_PREFIX = os.environ.get("TASK_PREFIX", "")  # optional prefix filter e.g. "/task"
 
 logging.basicConfig(
@@ -54,14 +51,12 @@ logging.basicConfig(
 )
 log = logging.getLogger("slack-notion-agent")
 
-slack = WebClient(token=SLACK_BOT_TOKEN)
+app = App(token=SLACK_BOT_TOKEN)
 notion = NotionClient(auth=NOTION_TOKEN)
 
 # ---------------------------------------------------------------------------
 # Valid values for select/multi-select properties
 # ---------------------------------------------------------------------------
-VALID_STATUSES = {"Inbox", "To Do", "In Progress", "Done", "Dropped"}
-VALID_PRIORITIES = {"P1", "P2", "P3", "P4"}
 VALID_TAGS = {
     "lucid", "personal", "hiring", "product", "fundraise",
     "ops", "legal", "marketing", "sales", "admin",
@@ -125,7 +120,6 @@ def parse_date(text: str) -> Optional[str]:
     if text in ("eod", "end of day"):
         return today.isoformat()
     if text in ("eow", "end of week"):
-        # Next Friday
         days_until_friday = (4 - today.weekday()) % 7 or 7
         return (today + timedelta(days=days_until_friday)).isoformat()
     if text in ("eom", "end of month"):
@@ -291,10 +285,36 @@ def create_notion_task(task: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Slack helpers
+# Slack event handler
 # ---------------------------------------------------------------------------
-def post_confirmation(channel: str, thread_ts: str, task: dict, notion_url: str):
-    """Reply in the Slack thread confirming the task was created."""
+@app.event("message")
+def handle_message(event, say):
+    """Handle incoming Slack messages and create Notion tasks."""
+    # Ignore bot messages, message edits, and thread replies
+    if event.get("bot_id") or event.get("subtype"):
+        return
+
+    text = event.get("text", "")
+    if not text:
+        return
+
+    task = parse_task_message(text)
+    if not task:
+        return
+
+    log.info("Parsed task from Slack: %s", task["name"])
+
+    try:
+        notion_url = create_notion_task(task)
+    except Exception:
+        log.exception("Failed to create Notion task")
+        say(
+            text="Sorry, I couldn't create that task in Notion. Please try again.",
+            thread_ts=event.get("ts"),
+        )
+        return
+
+    # Build confirmation message
     fields = [f"*Task:* {task['name']}"]
     fields.append(f"*Status:* {task['status']}")
     if task.get("priority"):
@@ -309,77 +329,13 @@ def post_confirmation(channel: str, thread_ts: str, task: dict, notion_url: str)
         fields.append(f"*Recurring:* {task['recurring']}")
     fields.append(f"<{notion_url}|View in Notion>")
 
-    try:
-        slack.chat_postMessage(
-            channel=channel,
-            thread_ts=thread_ts,
-            text="\n".join(fields),
-        )
-    except SlackApiError as e:
-        log.warning("Could not post confirmation: %s", e.response["error"])
-
-
-def get_bot_user_id() -> str:
-    """Get the bot's own user ID so we can ignore our own messages."""
-    resp = slack.auth_test()
-    return resp["user_id"]
+    say(text="\n".join(fields), thread_ts=event.get("ts"))
 
 
 # ---------------------------------------------------------------------------
-# Main polling loop
+# Entry point
 # ---------------------------------------------------------------------------
-def run():
-    if not SLACK_CHANNEL_ID:
-        log.error(
-            "SLACK_CHANNEL_ID is not set. Set it to the channel or DM ID to monitor."
-        )
-        raise SystemExit(1)
-
-    bot_user_id = get_bot_user_id()
-    log.info("Agent started. Monitoring channel %s every %ds", SLACK_CHANNEL_ID, POLL_INTERVAL)
-
-    # Track the latest timestamp we've processed
-    last_ts = str(time.time())
-
-    while True:
-        try:
-            resp = slack.conversations_history(
-                channel=SLACK_CHANNEL_ID,
-                oldest=last_ts,
-                limit=20,
-            )
-            messages = resp.get("messages", [])
-
-            # Process oldest-first
-            for msg in reversed(messages):
-                ts = msg.get("ts", "")
-                user = msg.get("user", "")
-                text = msg.get("text", "")
-
-                # Skip bot's own messages and empty messages
-                if user == bot_user_id or not text:
-                    continue
-
-                task = parse_task_message(text)
-                if task:
-                    log.info("Parsed task from Slack: %s", task["name"])
-                    try:
-                        notion_url = create_notion_task(task)
-                        post_confirmation(SLACK_CHANNEL_ID, ts, task, notion_url)
-                    except Exception:
-                        log.exception("Failed to create Notion task")
-
-                # Advance watermark past this message
-                if ts > last_ts:
-                    last_ts = ts
-
-        except SlackApiError as e:
-            log.error("Slack API error: %s", e.response["error"])
-        except Exception:
-            log.exception("Unexpected error in poll loop")
-
-        time.sleep(POLL_INTERVAL)
-
-
 if __name__ == "__main__":
-    run()
+    log.info("Starting Slack -> Notion Task Agent (Socket Mode)...")
+    handler = SocketModeHandler(app, SLACK_APP_TOKEN)
+    handler.start()
