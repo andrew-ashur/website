@@ -1,0 +1,13 @@
+# Andrew Ashur
+
+> Founder and CEO of Lucid Bots, the world's largest provider of drones and robots for exterior cleaning and facade maintenance. Author of The Student Founder (February 2027). Co-founder of Persto.
+
+Andrew Ashur started Lucid Bots as a Davidson College junior after watching window washers nearly die on the job. He had no engineering background, taught himself from YouTube and textbooks, and started with a $12 soldering iron and $42 in the company account. Lucid Bots went through Y Combinator (S19), has shipped more than 600 robots, raised $34 million including a $20 million Series B in March 2026, and was named by Inc. 5000 the fastest-growing robotics manufacturer in the country. Forbes 30 Under 30. He co-founded Persto, mentorship program management software for venture mentoring programs, with his wife, and served as Davidson's Alumni Innovator-in-Residence. He writes the Robot Rundown, a weekly robotics newsletter.
+
+## Pages
+
+- [Home](https://www.andrewashur.com/): about, ventures, milestones, newsletter, the book, contact.
+- [The Student Founder](https://www.thestudentfounder.com/): his book for student entrepreneurs, out February 2027. The prologue is free to read.
+- [Press kit for the book](https://www.thestudentfounder.com/press.html)
+- [Lucid Bots](https://lucidbots.com)
+- [Persto](https://persto.io)
