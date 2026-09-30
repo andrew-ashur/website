@@ -25,7 +25,8 @@ jobs:
       - name: Copy site files to dist
         run: |
           mkdir dist
-          cp index.html style.css script.js robots.txt sitemap.xml favicon.svg hero.jpeg dogs.jpeg dist/
+          cp index.html style.css script.js robots.txt sitemap.xml favicon.svg hero.jpeg dogs.jpeg student-founder-cover.jpg dist/
+          cp -r book dist/
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: 'dist'

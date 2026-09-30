@@ -1035,3 +1035,9 @@ img {
         min-height: 48px;
     }
 }
+
+/* The Student Founder */
+.book-cover { display: block; width: 160px; margin: 0 auto 2rem; }
+.book-cover img { width: 100%; height: auto; border-radius: 4px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35); transition: transform var(--transition); }
+.book-cover:hover img { transform: translateY(-4px); }
+.book-note { margin-top: 1rem; font-size: 0.9rem; color: rgba(255, 255, 255, 0.6); }
