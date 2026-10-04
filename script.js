@@ -59,3 +59,12 @@ document.querySelectorAll('a[href^="#"]').forEach(anchor => {
         }
     });
 });
+
+// Count clicks through to the book site (GA event; no-op if gtag is blocked).
+document.querySelectorAll('a[href^="https://www.thestudentfounder.com"]').forEach((link) => {
+    link.addEventListener('click', () => {
+        if (typeof window.gtag === 'function') {
+            window.gtag('event', 'book_click', { link_text: link.textContent.trim().slice(0, 60) });
+        }
+    });
+});
