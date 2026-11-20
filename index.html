@@ -35,6 +35,7 @@
     {
         "@context": "https://schema.org",
         "@type": "Person",
+        "@id": "https://www.andrewashur.com/#person",
         "name": "Andrew Ashur",
         "url": "https://www.andrewashur.com",
         "image": "https://www.andrewashur.com/hero.jpeg",
@@ -49,21 +50,29 @@
             "@type": "CollegeOrUniversity",
             "name": "Davidson College"
         },
-        "award": ["Forbes 30 Under 30 - Manufacturing & Industry (2022)", "Inc. 5000 - Fastest Growing Robotics Manufacturer (2024)", "Y Combinator S19"],
+        "award": ["Forbes 30 Under 30 - Manufacturing & Industry (2022)", "Inc. 5000 - Fastest Growing Robotics Manufacturer (2025)", "Y Combinator S19"],
         "description": "Robotics entrepreneur, Founder & CEO of Lucid Bots, the world's largest provider of drones and robots for exterior cleaning and facade maintenance. Forbes 30 Under 30 honoree and Davidson College Innovator-in-Residence.",
         "knowsAbout": ["Robotics", "Autonomous Drones", "Exterior Cleaning Technology", "Facade Maintenance", "Entrepreneurship", "Hardware Startups", "Student Entrepreneurship"],
-        "author": {
-            "@type": "Book",
-            "name": "The Student Founder",
-            "url": "https://www.thestudentfounder.com/",
-            "description": "Why Your Student Years Are the Best Time to Build Something Real. Out February 2027."
-        },
         "sameAs": [
             "https://www.linkedin.com/in/andrewashur/",
             "https://x.com/andrew__ashur",
             "https://lucidbots.com",
             "https://persto.io"
         ]
+    }
+    </script>
+
+    <!-- Book Structured Data -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "Book",
+        "name": "The Student Founder",
+        "alternateName": "Why Your Student Years Are the Best Time to Build Something Real",
+        "url": "https://www.thestudentfounder.com/",
+        "author": { "@id": "https://www.andrewashur.com/#person" },
+        "description": "How to start a real business as a student, by Andrew Ashur. Out February 2027.",
+        "about": ["Student entrepreneurship", "Starting a business in college", "Startups"]
     }
     </script>
 
@@ -143,7 +152,7 @@
                 I started with a $12 soldering iron and a question about why workers were still risking their lives on jobs machines could do. That question became Lucid Bots, now the world's largest provider of drones and robots for exterior cleaning and facade maintenance.
             </p>
             <div class="hero-actions">
-                <a href="https://www.thestudentfounder.com/" class="btn btn-primary">Read my book's prologue free</a>
+                <a href="https://www.thestudentfounder.com/" class="btn btn-primary">Read my book's first chapter free</a>
                 <a href="#contact" class="btn btn-outline">Get in Touch</a>
             </div>
         </div>
@@ -397,8 +406,9 @@
                         <span>Building It</span>
                         <span>The 30-Day Sprint</span>
                     </div>
-                    <a href="https://www.thestudentfounder.com/" class="btn btn-primary book-btn">Read the prologue free &rarr;</a>
-                    <p class="book-note">The prologue is free now. Leave your email there and you'll hear the day the book is out.</p>
+                    <a href="https://www.thestudentfounder.com/" class="btn btn-primary book-btn">Read chapter one free &rarr;</a>
+                    <p class="book-note">Chapter one is free now. Leave your email there and you'll hear the day the book is out.</p>
+                    <p class="book-note">Guides from the book: <a href="https://www.thestudentfounder.com/how-to-start-a-business-in-college.html">how to start a business in college</a>, <a href="https://www.thestudentfounder.com/how-to-find-a-startup-idea-in-college.html">how to find a startup idea</a>, <a href="https://www.thestudentfounder.com/how-to-get-first-customers-as-a-student.html">how to get your first customers</a>, and <a href="https://www.thestudentfounder.com/reading-list.html">the reading list</a>.</p>
                 </div>
             </div>
         </div>

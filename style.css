@@ -1041,3 +1041,5 @@ img {
 .book-cover img { width: 100%; height: auto; border-radius: 4px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35); transition: transform var(--transition); }
 .book-cover:hover img { transform: translateY(-4px); }
 .book-note { margin-top: 1rem; font-size: 0.9rem; color: rgba(255, 255, 255, 0.6); }
+
+.book-note a { color: rgba(255, 255, 255, 0.85); text-decoration: underline; text-underline-offset: 2px; }
